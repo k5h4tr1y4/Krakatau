@@ -36,7 +36,7 @@ class UnionFind(object):
 def visitStatementTree(scope, callback, catchcb=None):
     for item in scope.statements:
         for sub in item.getScopes():
-            visitStatementTree(sub, callback=callback)
+            visitStatementTree(sub, callback, catchcb)
         if item.expr is not None:
             callback(item, item.expr)
         if catchcb is not None and isinstance(item, ast.TryStatement):
@@ -133,7 +133,7 @@ def interfaceVars(env, root, arg_vars):
             return False
         if objtypes.className(expr.dtype) == objtypes.className(objtypes.ObjectTT):
             return True
-        return 'INTERFACE' in env.getFlags(objtypes.className(expr.dtype))
+        return env.isInterface(objtypes.className(expr.dtype))
 
     def updateConst(var, tt):
         varlist.append(var)

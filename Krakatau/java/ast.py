@@ -33,6 +33,7 @@ class JavaStatement(object):
 class ExpressionStatement(JavaStatement):
     def __init__(self, expr):
         self.expr = expr
+        assert(expr is not None)
 
     def print_(self, printer, print_): return print_(self.expr) + ';'
     def tree(self, printer, tree): return [self.__class__.__name__, tree(self.expr)]
@@ -240,13 +241,6 @@ class StatementBlock(LazyLabelBase):
         return common[-1][0]
 
     def tree(self, printer, tree): return ['BlockStatement', self.label, map(tree, self.statements)]
-
-#Temporary hack
-class StringStatement(JavaStatement):
-    def __init__(self, s):
-        self.s = s
-    def print_(self, printer, print_): return self.s
-    def tree(self, printer, tree): return ['stringS', self.s]
 
 #############################################################################################################################################
 # Careful, order is important here!
@@ -591,6 +585,14 @@ Literal.FZERO = Literal(objtypes.FloatTT, 0.0)
 Literal.DZERO = Literal(objtypes.DoubleTT, 0.0)
 Literal.NULL = Literal(objtypes.NullTT, None)
 
+_init_d = {objtypes.BoolTT: Literal.FALSE,
+        objtypes.IntTT: Literal.ZERO,
+        objtypes.LongTT: Literal.LZERO,
+        objtypes.FloatTT: Literal.FZERO,
+        objtypes.DoubleTT: Literal.DZERO}
+def dummyLiteral(tt):
+    return _init_d.get(tt, Literal.NULL)
+
 class Local(JavaExpression):
     def __init__(self, vartype, namefunc):
         self.dtype = vartype
@@ -724,8 +726,8 @@ class UnaryPrefix(JavaExpression):
     def tree(self, printer, tree): return ['Unary', map(tree, self.params), self.opstr, False]
 
 class Dummy(JavaExpression):
-    def __init__(self, fmt, params, isNew=False):
+    def __init__(self, fmt, params, isNew=False, dtype=None):
         self.params = params
         self.fmt = fmt
         self.isNew = isNew
-        self.dtype = None
+        self.dtype = dtype

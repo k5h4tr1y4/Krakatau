@@ -57,7 +57,7 @@ class VarInfo(object):
 
         result = ast.Local(tt, namefunc)
         # merge all variables of uninitialized type to simplify fixObjectCreations in javamethod.py
-        if var.uninit_orig_num is not None:
+        if var.uninit_orig_num is not None and not isCast:
             result = self._uninit_vars.setdefault(var.uninit_orig_num, result)
         return result
 
@@ -146,13 +146,21 @@ def _convertJExpr(op, getExpr, clsname):
             expr = ast.MethodInvocation(ast.TypeName(target_tt), op.name, [None]+tt_types, params, op, ret_type)
         else:
             expr = ast.MethodInvocation(params[0], op.name, [target_tt]+tt_types, params[1:], op, ret_type)
+    elif isinstance(op, ssa_ops.InvokeDynamic):
+        vtypes, rettypes = parseMethodDescriptor(op.desc, unsynthesize=False)
+        ret_type = objtypes.verifierToSynthetic(rettypes[0]) if rettypes else None
+        fmt = '/*invokedynamic*/'
+        if ret_type is not None:
+            fmt += '{{{}}}'.format(len(params))
+            params.append(ast.dummyLiteral(ret_type))
+        expr = ast.Dummy(fmt, params, dtype=ret_type)
     elif isinstance(op, ssa_ops.Monitor):
-        fmt = '//monexit({})' if op.exit else '//monenter({})'
+        fmt = '/*monexit({})*/' if op.exit else '/*monenter({})*/'
         expr = ast.Dummy(fmt, params)
     elif isinstance(op, ssa_ops.MultiNewArray):
         expr = ast.ArrayCreation(op.tt, *params)
     elif isinstance(op, ssa_ops.New):
-        expr = ast.Dummy('//<unmerged new> {}', [ast.TypeName(op.tt)], isNew=True)
+        expr = ast.Dummy('/*<unmerged new> {}*/', [ast.TypeName(op.tt)], isNew=True)
     elif isinstance(op, ssa_ops.NewArray):
         expr = ast.ArrayCreation(op.tt, params[0])
     elif isinstance(op, ssa_ops.Truncate):
@@ -161,11 +169,9 @@ def _convertJExpr(op, getExpr, clsname):
     if op.rval is not None and expr:
         expr = ast.Assignment(getExpr(op.rval), expr)
 
-    if expr is None: #Temporary hack to show what's missing
-        if isinstance(op, (ssa_ops.TryReturn, ssa_ops.ExceptionPhi)):
-            return None #Don't print out anything
-        else:
-            return ast.StringStatement('//' + type(op).__name__)
+    if expr is None: # Temporary hack
+        if isinstance(op, (ssa_ops.TryReturn, ssa_ops.ExceptionPhi, ssa_ops.MagicThrow)):
+            return None # Don't print out anything
     return ast.ExpressionStatement(expr)
 
 #########################################################################################
@@ -196,7 +202,9 @@ def _createASTBlock(info, endk, node):
             assert(isinstance(lines_after[-1].expr, ast.Cast))
             var = temp_op.params[0]
             cexpr = lines_after[-1].expr
-            lines_after[-1].expr = ast.Assignment(info.var(node, var, True), cexpr)
+            lhs = info.var(node, var, True)
+            assert(lhs != cexpr.params[1])
+            lines_after[-1].expr = ast.Assignment(lhs, cexpr)
             nvar = outreplace[var] = lines_after[-1].expr.params[0]
             nvar.dtype = cexpr.dtype
 

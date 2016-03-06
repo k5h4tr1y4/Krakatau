@@ -113,6 +113,7 @@ class SSA_Graph(object):
 
     def mergeSingleSuccessorBlocks(self):
         assert(not self.procs) # Make sure that all single jsr procs are inlined first
+        self._conscheck()
 
         removed = set()
         for block in self.blocks:
@@ -120,8 +121,6 @@ class SSA_Graph(object):
                 continue
             while isinstance(block.jump, ssa_jumps.Goto):
                 jump = block.jump
-                if len(jump.getNormalSuccessors()) != 1:
-                    break
                 block2 = jump.getNormalSuccessors()[0]
                 fromkey = block, False
                 if block2.predecessors != [fromkey]:
@@ -149,6 +148,7 @@ class SSA_Graph(object):
                         phi.replaceVars(replace)
                 removed.add(block2)
         self.blocks = [b for b in self.blocks if b not in removed]
+        self._conscheck()
 
     def disconnectConstantVariables(self):
         for block in self.blocks:
@@ -539,11 +539,10 @@ class SSA_Graph(object):
             block.phis.append(phi)
             block.unaryConstraints[rval] = jsrblock.unaryConstraints[var]
 
-            if block == target:
-                assert(block.predecessors == [(jsrblock, False)])
-                phi.add(block.predecessors[0], var)
-            else:
-                for key in block.predecessors:
+            for key in block.predecessors:
+                if key == (jsrblock, False):
+                    phi.add(key, var)
+                else:
                     phi.add(key, svarcopy[var, key[0]])
 
         outreplace = {jv:rv for jv, rv in zip(jsrblock.jump.output, retblock.jump.input) if jv is not None}
@@ -574,6 +573,8 @@ class SSA_Graph(object):
         self.procs = graph_util.topologicalSort(self.procs, parents.get)
         if any(parents.values()):
             print 'Warning, nesting subprocedures detected! This method may take a long time to decompile.'
+
+        print 'Subprocedures for', self.code.method.name + ':', self.procs
 
         #now inline the procs
         while self.procs:
@@ -707,12 +708,12 @@ class SSA_Graph(object):
     def getConstPoolType(self, index):
         return self.class_.cpool.getType(index)
 
-def ssaFromVerified(code, iNodes):
+def ssaFromVerified(code, iNodes, opts):
     method = code.method
     inputTypes, returnTypes = parseUnboundMethodDescriptor(method.descriptor, method.class_.name, method.static)
 
     parent = SSA_Graph(code)
-    data = blockmaker.BlockMaker(parent, iNodes, inputTypes, returnTypes, code.except_raw)
+    data = blockmaker.BlockMaker(parent, iNodes, inputTypes, returnTypes, code.except_raw, opts=opts)
 
     parent.blocks = blocks = data.blocks
     parent.entryBlock = data.entryBlock
@@ -728,7 +729,7 @@ def ssaFromVerified(code, iNodes):
 
     # Intern constraints to save a bit of memory for long methods
     def makeConstraint(var, _cache={}):
-        key = var.type, var.const, var.decltype
+        key = var.type, var.const, var.decltype, var.uninit_orig_num is None
         try:
             return _cache[key]
         except KeyError:

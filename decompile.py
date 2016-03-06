@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 import os.path
-import time, random
+import time, random, subprocess, functools
 
 import Krakatau
 import Krakatau.ssa
@@ -12,13 +12,21 @@ from Krakatau import script_util
 
 def findJRE():
     try:
-        home = os.environ['JAVA_HOME']
-        path = os.path.join(home, 'jre', 'lib', 'rt.jar')
-        if os.path.isfile(path):
-            return path
+        home = os.environ.get('JAVA_HOME')
+        if home:
+            path = os.path.join(home, 'jre', 'lib', 'rt.jar')
+            if os.path.isfile(path):
+                return path
 
-        #For macs
-        path = os.path.join(home, 'bundle', 'Classes', 'classes.jar')
+            #For macs
+            path = os.path.join(home, 'bundle', 'Classes', 'classes.jar')
+            if os.path.isfile(path):
+                return path
+
+        # Ubuntu and co
+        out = subprocess.Popen(['update-java-alternatives', '-l'], stdout=subprocess.PIPE).communicate()[0]
+        basedir = out.split('\n')[0].rpartition(' ')[-1]
+        path = os.path.join(basedir, 'jre', 'lib', 'rt.jar')
         if os.path.isfile(path):
             return path
     except Exception as e:
@@ -33,9 +41,9 @@ def _print(s):
     from Krakatau.ssa.printer import SSAPrinter
     return SSAPrinter(s).print_()
 
-def makeGraph(m):
+def makeGraph(opts, m):
     v = verifyBytecode(m.code)
-    s = Krakatau.ssa.ssaFromVerified(m.code, v)
+    s = Krakatau.ssa.ssaFromVerified(m.code, v, opts)
 
     if s.procs:
         # s.mergeSingleSuccessorBlocks()
@@ -72,7 +80,7 @@ def deleteUnusued(cls):
     del cls.interfaces_raw, cls.cpool
     del cls.attributes
 
-def decompileClass(path=[], targets=None, outpath=None, skip_errors=False, add_throws=False):
+def decompileClass(path=[], targets=None, outpath=None, skip_errors=False, add_throws=False, magic_throw=False):
     out = script_util.makeWriter(outpath, '.java')
 
     e = Environment()
@@ -88,7 +96,8 @@ def decompileClass(path=[], targets=None, outpath=None, skip_errors=False, add_t
 
             try:
                 c = e.getClass(target)
-                source = printer.visit(javaclass.generateAST(c, makeGraph, skip_errors, add_throws=add_throws))
+                makeGraphCB = functools.partial(makeGraph, magic_throw)
+                source = printer.visit(javaclass.generateAST(c, makeGraphCB, skip_errors, add_throws=add_throws))
             except Exception as err:
                 if not skip_errors:
                     raise
@@ -108,6 +117,7 @@ def decompileClass(path=[], targets=None, outpath=None, skip_errors=False, add_t
             print 'Class written to', filename.encode('utf8')
             print time.time() - start_time, ' seconds elapsed'
             deleteUnusued(c)
+        print len(e.classes) - len(targets), 'extra classes loaded'
 
 if __name__== "__main__":
     print script_util.copyright
@@ -119,6 +129,7 @@ if __name__== "__main__":
     parser.add_argument('-nauto', action='store_true', help="Don't attempt to automatically locate the Java standard library. If enabled, you must specify the path explicitly.")
     parser.add_argument('-r', action='store_true', help="Process all files in the directory target and subdirectories")
     parser.add_argument('-skip', action='store_true', help="Upon errors, skip class or method and continue decompiling")
+    parser.add_argument('-xmagicthrow', action='store_true')
     parser.add_argument('target',help='Name of class or jar file to decompile')
     args = parser.parse_args()
 
@@ -141,4 +152,4 @@ if __name__== "__main__":
 
     targets = script_util.findFiles(args.target, args.r, '.class')
     targets = map(script_util.normalizeClassname, targets)
-    decompileClass(path, targets, args.out, args.skip)
+    decompileClass(path, targets, args.out, args.skip, magic_throw=args.xmagicthrow)

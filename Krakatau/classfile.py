@@ -89,33 +89,10 @@ class ClassFile(object):
         self.name = self.cpool.getArgsCheck('Class', self.this)
         self.elementsLoaded = False
 
-        self.env = self.supername = self.hierarchy = None
+        self.env = self.supername = None
         self.fields = self.methods = self.attributes = None
-        self.all_interfaces = None
-
-    def loadSupers(self, env, name, subclasses):
-        self.env = env
-        assert(self.name == name)
-
         if self.super:
             self.supername = self.cpool.getArgsCheck('Class', self.super)
-            superclass = self.env.getClass(self.supername, subclasses + (name,), partial=True)
-            self.hierarchy = superclass.hierarchy + (self.name,)
-
-            # Now get all interfaces for this class (recursively)
-            interfaces = self.env.getInterfaces(self.supername)
-            if 'INTERFACE' in self.flags:
-                interfaces |= {self.name}
-            for index in self.interfaces_raw:
-                iname = self.cpool.getArgsCheck('Class', index)
-                if iname not in interfaces:
-                    interfaces |= self.env.getInterfaces(iname)
-            self.all_interfaces = interfaces
-        else:
-            assert(name == 'java/lang/Object')
-            self.supername = None
-            self.hierarchy = (self.name,)
-            self.all_interfaces = frozenset()
 
     def loadElements(self, keepRaw=False):
         if self.elementsLoaded:

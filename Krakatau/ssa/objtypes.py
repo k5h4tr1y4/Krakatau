@@ -75,9 +75,9 @@ def commonSupertype(env, tts):
         return TypeTT('java/lang/Object', newdim-1)
 
     # find common superclass of base types
-    baselists = [env.getSupers(baset(tt)) for tt in tts]
-    common = [x for x in zip(*baselists) if len(set(x)) == 1]
-    return TypeTT(common[-1][0], newdim)
+    bases = sorted(map(baset, tts))
+    superclass = reduce(env.commonSuperclass, bases)
+    return TypeTT(superclass, newdim)
 
 ######################################################################################################
 _verifierConvert = {vtypes.T_INT:IntTT, vtypes.T_FLOAT:FloatTT, vtypes.T_LONG:LongTT,
@@ -111,15 +111,11 @@ def declTypeToActual(env, decltype):
     elif not isBaseTClass(decltype): #primative types can't be subclassed anyway
         return [], [decltype]
 
-    flags = env.getFlags(name, suppressErrors=True)
-    # If class is not found (returned None) assume worst case, that is a interface
-    isinterface = flags is None or 'INTERFACE' in flags
-
     #Verifier doesn't fully verify interfaces so they could be anything
-    if isinterface:
+    if env.isInterface(name):
         return [withDimInc(ObjectTT, newdim)], []
     # If class is final, return it as exact, not super
-    elif 'FINAL' in flags:
+    elif env.isFinal(name):
         return [], [decltype]
     else:
         return [decltype], []
